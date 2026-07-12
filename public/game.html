@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, maximum-scale=1, minimum-scale=1, user-scalable=no">
+    <title>Streak Wall</title>
+    <link rel="modulepreload" href="game.js">
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{
+        width:100dvw;height:100dvh;overflow-y:auto;overflow-x:hidden;
+        background:#14151a;color:#f4f1de;
+        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+        display:flex;flex-direction:column;align-items:center;
+        padding:8px;gap:6px;
+      }
+      header{text-align:center;width:100%}
+      header h1{font-size:17px;margin-bottom:1px}
+      #challenge-num{font-size:10px;color:#ff6f91;text-transform:uppercase;letter-spacing:1px}
+      #prompt-text{color:#9a9aa5;font-size:11px;margin-top:2px}
+      .stats{display:flex;gap:10px;font-size:11px;color:#9a9aa5;justify-content:center;flex-wrap:wrap}
+      #streak{color:#ffca3a;font-weight:700}
+
+      /* XP bar */
+      .xp-row{display:flex;align-items:center;gap:6px;width:100%;max-width:560px}
+      #level-badge{background:#ff6f91;color:#1a1a1a;font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;white-space:nowrap}
+      .xp-track{flex:1;height:6px;background:#2a2f45;border-radius:999px;overflow:hidden}
+      #xp-bar-fill{height:100%;background:linear-gradient(90deg,#ff6f91,#ffca3a);border-radius:999px;transition:width 0.4s ease;width:0%}
+      #xp-label{font-size:10px;color:#9a9aa5;white-space:nowrap}
+
+      /* canvas + inspire */
+      .canvas-row{display:flex;gap:8px;align-items:flex-start}
+      #mosaic-canvas{background:#1e2027;border-radius:6px;cursor:crosshair;touch-action:manipulation;flex-shrink:0}
+
+      /* inspire panel */
+      .inspire-panel{display:flex;flex-direction:column;align-items:center;gap:4px;width:90px;flex-shrink:0}
+      .inspire-label{font-size:9px;color:#9a9aa5;text-transform:uppercase;letter-spacing:0.5px;text-align:center}
+      #inspire-canvas{border-radius:4px;border:1px solid #2a2f45;image-rendering:pixelated;width:80px;height:50px}
+
+      /* palette */
+      .palette-row{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%}
+      .palette{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+      .swatch{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:transform 0.15s}
+      .swatch.active{border-color:#f4f1de;transform:scale(1.2)}
+      #color-name{font-size:11px;color:#9a9aa5;height:14px}
+
+      /* tabs */
+      .tab-bar{display:flex;gap:4px;width:100%;max-width:560px}
+      .tab-btn{
+        flex:1;padding:6px 0;background:#1e2027;border:none;color:#9a9aa5;
+        font-size:11px;font-weight:600;border-radius:6px;cursor:pointer;
+        transition:background 0.2s,color 0.2s;
+      }
+      .tab-btn.active{background:#ff6f91;color:#1a1a1a}
+      .tab-panel{display:none;width:100%;max-width:560px;background:#1e2027;border-radius:8px;padding:8px}
+      .tab-panel.active{display:block}
+
+      /* activity */
+      #activity-list{list-style:none;display:flex;flex-direction:column;gap:4px}
+      .activity-item{display:flex;align-items:center;gap:5px;font-size:10px;color:#9a9aa5}
+      .activity-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+      .activity-user{color:#f4f1de;font-weight:600}
+      .activity-time{margin-left:auto;color:#555}
+      .activity-empty{font-size:11px;color:#555;text-align:center;padding:8px}
+
+      /* leaderboard */
+      #lb-list{list-style:none;display:flex;flex-direction:column;gap:4px}
+      .lb-item{display:flex;align-items:center;gap:5px;font-size:10px}
+      .lb-item.gold .lb-name{color:#ffca3a}
+      .lb-item.silver .lb-name{color:#c0c0c0}
+      .lb-item.bronze .lb-name{color:#cd7f32}
+      .lb-rank{font-size:13px;width:20px;text-align:center}
+      .lb-name{font-weight:600;color:#f4f1de;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .lb-xp{color:#9a9aa5;white-space:nowrap}
+      .lb-empty{font-size:11px;color:#555;text-align:center;padding:8px}
+
+      /* badge shelf */
+      .badge-shelf-wrap{width:100%;max-width:560px}
+      .badge-shelf-title{font-size:10px;color:#9a9aa5;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+      #badge-shelf{display:flex;gap:6px;flex-wrap:wrap}
+      .badge-item{
+        display:flex;flex-direction:column;align-items:center;gap:2px;
+        padding:6px 10px;border-radius:8px;font-size:10px;min-width:60px;text-align:center;
+        transition:all 0.3s;border:1px solid transparent;
+      }
+      .badge-item.earned{border-color:#ff6f91}
+      .badge-item.earned.b-first{background:linear-gradient(135deg,#1982c4,#2ec4b6)}
+      .badge-item.earned.b-10{background:linear-gradient(135deg,#ff595e,#ff9f3a)}
+      .badge-item.earned.b-25{background:linear-gradient(135deg,#6a4c93,#ff6f91)}
+      .badge-item.earned.b-100{background:linear-gradient(135deg,#ffca3a,#ff595e)}
+      .badge-item.locked{background:#1e2027;border-color:#2a2f45;opacity:0.4;filter:grayscale(1)}
+      .badge-emoji{font-size:18px}
+      .badge-label{color:#f4f1de;font-size:9px;font-weight:600}
+      .badge-item.locked .badge-label{color:#9a9aa5}
+
+      /* completion */
+      #completion-screen{
+        display:none;position:fixed;inset:0;background:rgba(20,21,26,0.96);
+        flex-direction:column;align-items:center;justify-content:center;
+        gap:14px;z-index:100;text-align:center;padding:20px;
+      }
+      #completion-screen.show{display:flex}
+      #completion-screen h2{font-size:26px;color:#ffca3a}
+      #completion-screen p{color:#9a9aa5;font-size:13px}
+      .cs-stat{font-size:15px;color:#f4f1de;margin:3px 0}
+      .confetti-emoji{font-size:48px}
+
+      /* toast */
+      #badge-toast{
+        position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);
+        background:#ff6f91;color:#1a1a1a;padding:10px 20px;
+        border-radius:999px;font-size:13px;font-weight:600;
+        transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+        white-space:nowrap;pointer-events:none;z-index:99;
+      }
+      #badge-toast.show{transform:translateX(-50%) translateY(0)}
+
+      /* prompt suggestion */
+      details{width:100%;max-width:560px;color:#9a9aa5;font-size:12px}
+      .suggest-body{display:flex;gap:6px;margin-top:6px}
+      .suggest-body input{flex:1;padding:6px;border-radius:6px;border:1px solid #333;background:#1e2027;color:#f4f1de;font-size:12px}
+      .suggest-body button{background:#ff6f91;border:none;border-radius:6px;padding:6px 12px;color:#1a1a1a;font-weight:700;cursor:pointer}
+    </style>
+  </head>
+  <body>
+
+    <header>
+      <h1>Streak Wall</h1>
+      <div id="challenge-num">Daily Challenge #1</div>
+      <p id="prompt-text">Loading…</p>
+    </header>
+
+    <div class="stats">
+      <span id="tiles-left">— tiles left today</span>
+      <span id="participants">— painting today</span>
+      <span id="streak"></span>
+    </div>
+
+    <div class="xp-row">
+      <span id="level-badge">Lv1</span>
+      <div class="xp-track"><div id="xp-bar-fill"></div></div>
+      <span id="xp-label">0 / 50 XP</span>
+    </div>
+
+    <div class="canvas-row">
+      <canvas id="mosaic-canvas"></canvas>
+      <div class="inspire-panel">
+        <span class="inspire-label">Today's vibe</span>
+        <canvas id="inspire-canvas" width="80" height="50"></canvas>
+        <span class="inspire-label">Paint toward this!</span>
+      </div>
+    </div>
+
+    <div class="palette-row">
+      <div class="palette" id="palette"></div>
+      <span id="color-name"></span>
+    </div>
+
+    <!-- tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="activity">🎯 Live Activity</button>
+      <button class="tab-btn" data-tab="leaderboard">🏆 Leaderboard</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-activity">
+      <ul id="activity-list"><li class="activity-empty">No activity yet — be the first to paint!</li></ul>
+    </div>
+    <div class="tab-panel" id="tab-leaderboard">
+      <ol id="lb-list"><li class="lb-empty">No painters yet — start painting to appear here!</li></ol>
+    </div>
+
+    <div class="badge-shelf-wrap">
+      <div class="badge-shelf-title">Your badges</div>
+      <div id="badge-shelf"></div>
+    </div>
+
+    <details>
+      <summary>Vote for tomorrow's prompt</summary>
+      <div class="suggest-body">
+        <input id="prompt-input" maxlength="80" placeholder="e.g. draw your commute" />
+        <button id="prompt-submit">Submit</button>
+      </div>
+    </details>
+
+    <div id="completion-screen">
+      <div class="confetti-emoji">🎉</div>
+      <h2>Wall Complete!</h2>
+      <p>The community finished today's mosaic!</p>
+      <div id="completion-stats"></div>
+      <p style="color:#9a9aa5;font-size:12px">New challenge starting in a moment…</p>
+    </div>
+
+    <div id="badge-toast"></div>
+    <script src="game.js" type="module"></script>
+  </body>
+</html>
