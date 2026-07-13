@@ -11,7 +11,6 @@ const BADGE_COLOR_CLASS: Record<string,string> = {
   'first-paint':'b-first','streak-10':'b-10','streak-25':'b-25','streak-100':'b-100',
 }
 
-// ---------- pixel art icons (client-side, no Buffer needed) ----------
 const PIXEL_ICONS: Record<string,{colors:string[];grid:number[]}> = {
   sun:{colors:['','#ffca3a','#ff9f3a'],grid:[0,0,0,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1,1,1,1,0,0,0,1,0,1,1,0,1,0,0,0,0,1,1,0,0,0]},
   tree:{colors:['','#8ac926','#2ec4b6','#8a5a3a'],grid:[0,0,0,2,2,0,0,0,0,0,1,1,1,1,0,0,0,1,1,1,1,1,1,0,0,0,0,3,3,0,0,0,0,0,0,3,3,0,0,0]},
@@ -40,18 +39,16 @@ function drawInspireCanvas(prompt: string): void {
   const canvas = document.getElementById('inspire-canvas') as HTMLCanvasElement
   const ctx = canvas.getContext('2d')!
   const icon = PIXEL_ICONS[pickIcon(prompt)]
-  ctx.fillStyle = '#1e2027'
+  ctx.fillStyle = isDark ? '#1e2027' : '#e8e4dc'
   ctx.fillRect(0,0,80,50)
   icon.grid.forEach((ci,i) => {
     if (ci===0) return
-    const x = (i%8)*10
-    const y = Math.floor(i/8)*10
     ctx.fillStyle = icon.colors[ci]
-    ctx.fillRect(x,y,9,9)
+    ctx.fillRect((i%8)*10,(Math.floor(i/8))*10,9,9)
   })
 }
 
-// ---------- DOM refs ----------
+// DOM refs
 const canvas = document.getElementById('mosaic-canvas') as HTMLCanvasElement
 const ctx = canvas.getContext('2d')!
 const promptEl = document.getElementById('prompt-text') as HTMLParagraphElement
@@ -76,16 +73,35 @@ let tilesRemaining = TILES_PER_USER_PER_DAY
 let selectedColor = PALETTE[0]
 let cellSize = 32
 let hoveredIndex = -1
+let isDark = true
+
+// ---------- theme toggle ----------
+const themeBtn = document.getElementById('theme-toggle') as HTMLButtonElement
+const toggleTheme = (e: Event) => {
+  e.preventDefault()
+  e.stopPropagation()
+  isDark = !isDark
+  document.body.classList.toggle('light', !isDark)
+  themeBtn.textContent = isDark ? '🌙' : '☀️'
+  if (mosaic) drawInspireCanvas(mosaic.prompt)
+  draw()
+}
+themeBtn.addEventListener('click', toggleTheme)
+themeBtn.addEventListener('touchend', toggleTheme)
 
 // ---------- tabs ----------
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
+  const handler = (e: Event) => {
+    e.preventDefault()
+    e.stopPropagation()
     const tab = (btn as HTMLElement).dataset.tab!
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
     btn.classList.add('active')
     document.getElementById(`tab-${tab}`)?.classList.add('active')
-  })
+  }
+  btn.addEventListener('click', handler)
+  btn.addEventListener('touchend', handler)
 })
 
 // ---------- palette ----------
@@ -120,6 +136,9 @@ function resizeCanvas(): void {
 function draw(): void {
   if (!mosaic) return
   ctx.clearRect(0,0,canvas.width,canvas.height)
+  const style = getComputedStyle(document.body)
+  const emptyColor = style.getPropertyValue('--tile-empty').trim()
+  const hoverColor = style.getPropertyValue('--tile-hover').trim()
   mosaic.tiles.forEach((tile,i) => {
     const x = (i%GRID_WIDTH)*cellSize
     const y = Math.floor(i/GRID_WIDTH)*cellSize
@@ -130,7 +149,7 @@ function draw(): void {
       ctx.fillRect(x,y,cellSize-1,cellSize-1)
       ctx.globalAlpha = 1
     } else {
-      ctx.fillStyle = isHovered ? 'rgba(255,111,145,0.25)' : 'rgba(255,255,255,0.06)'
+      ctx.fillStyle = isHovered ? hoverColor : emptyColor
       ctx.fillRect(x,y,cellSize-1,cellSize-1)
     }
     if (isHovered) {
