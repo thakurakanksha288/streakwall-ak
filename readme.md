@@ -17,8 +17,8 @@ Built on Reddit's [Devvit Web](https://developers.reddit.com) for the **Games wi
 ---
 
 <p align="center">
-  <img src="docs/screenshots/splash-card.png" width="49%" alt="Streak Wall splash card in the Reddit feed" />
-  <img src="docs/screenshots/game-screen.png" width="49%" alt="Streak Wall game screen with palette, XP bar, and live activity" />
+  <img src="C:\Users\thaku\OneDrive\Pictures\Screenshots\Screenshot 2026-07-14 101845.png" width="49%" alt="Streak Wall splash card in the Reddit feed" />
+  <img src="C:\Users\thaku\OneDrive\Pictures\Screenshots\Screenshot 2026-07-14 101838.png" width="49%" alt="Streak Wall game screen with palette, XP bar, and live activity" />
 </p>
 
 ---
