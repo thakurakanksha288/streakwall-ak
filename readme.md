@@ -16,6 +16,10 @@ Built on Reddit's [Devvit Web](https://developers.reddit.com) for the **Games wi
 
 ---
 
+
+https://www.reddit.com/r/streakwalltest/?playtest=streakwall-ak
+
+
 <p align="center">
   <img src="E:\hack\streakwall-ak\Screenshot 2026-07-14 101838.png" width="49%" alt="Streak Wall splash card in the Reddit feed" />
   <img src="E:\hack\streakwall-ak\Screenshot 2026-07-14 101845.png" width="49%" alt="Streak Wall game screen with palette, XP bar, and live activity" />
