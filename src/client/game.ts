@@ -11,6 +11,17 @@ const BADGE_COLOR_CLASS: Record<string,string> = {
   'first-paint':'b-first','streak-10':'b-10','streak-25':'b-25','streak-100':'b-100',
 }
 
+// Economy config
+const TILE_DRIP_MS = 15 * 60 * 1000  // 15 mins
+const MAX_STACK = 5
+const WILDCARD_MS = 15 * 60 * 1000   // 15 mins
+
+// Economy state
+let dripTilesAvailable = 0
+let tilesExhaustedAt: number | null = null  // when all tiles ran out
+let wildcardColor: string | null = null
+let wildcardExpiresAt: number | null = null
+
 const PIXEL_ICONS: Record<string,{colors:string[];grid:number[]}> = {
   sun:{colors:['','#ffca3a','#ff9f3a'],grid:[0,0,0,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1,1,1,1,0,0,0,1,0,1,1,0,1,0,0,0,0,1,1,0,0,0]},
   tree:{colors:['','#8ac926','#2ec4b6','#8a5a3a'],grid:[0,0,0,2,2,0,0,0,0,0,1,1,1,1,0,0,0,1,1,1,1,1,1,0,0,0,0,3,3,0,0,0,0,0,0,3,3,0,0,0]},
@@ -33,19 +44,6 @@ function pickIcon(prompt: string): string {
   if (l.includes('creature')||l.includes('animal')||l.includes('pet')) return 'creature'
   if (l.includes('home')||l.includes('house')||l.includes('weekend')) return 'house'
   return 'default'
-}
-
-function drawInspireCanvas(prompt: string): void {
-  const canvas = document.getElementById('inspire-canvas') as HTMLCanvasElement
-  const ctx = canvas.getContext('2d')!
-  const icon = PIXEL_ICONS[pickIcon(prompt)]
-  ctx.fillStyle = isDark ? '#1e2027' : '#e8e4dc'
-  ctx.fillRect(0,0,80,50)
-  icon.grid.forEach((ci,i) => {
-    if (ci===0) return
-    ctx.fillStyle = icon.colors[ci]
-    ctx.fillRect((i%8)*10,(Math.floor(i/8))*10,9,9)
-  })
 }
 
 // DOM refs
@@ -75,54 +73,40 @@ let cellSize = 32
 let hoveredIndex = -1
 let isDark = true
 
-// ---------- theme toggle ----------
-const themeBtn = document.getElementById('theme-toggle') as HTMLButtonElement
-const toggleTheme = (e: Event) => {
-  e.preventDefault()
-  e.stopPropagation()
-  isDark = !isDark
-  document.body.classList.toggle('light', !isDark)
-  themeBtn.textContent = isDark ? '🌙' : '☀️'
-  if (mosaic) drawInspireCanvas(mosaic.prompt)
-  draw()
-}
-themeBtn.addEventListener('click', toggleTheme)
-themeBtn.addEventListener('touchend', toggleTheme)
-
-// ---------- tabs ----------
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  const handler = (e: Event) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const tab = (btn as HTMLElement).dataset.tab!
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
-    btn.classList.add('active')
-    document.getElementById(`tab-${tab}`)?.classList.add('active')
-  }
-  btn.addEventListener('click', handler)
-  btn.addEventListener('touchend', handler)
-})
-
-// ---------- palette ----------
-function buildPalette(): void {
-  PALETTE.forEach(color => {
-    const swatch = document.createElement('button')
-    swatch.className = 'swatch'
-    swatch.style.background = color
-    swatch.title = COLOR_NAMES[color] ?? color
-    swatch.addEventListener('mouseenter', () => { colorNameEl.textContent = COLOR_NAMES[color] ?? color })
-    swatch.addEventListener('mouseleave', () => { colorNameEl.textContent = COLOR_NAMES[selectedColor] ?? '' })
-    swatch.addEventListener('click', () => {
-      selectedColor = color
-      document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'))
-      swatch.classList.add('active')
-      colorNameEl.textContent = COLOR_NAMES[color] ?? color
-    })
-    paletteEl.appendChild(swatch)
+function drawInspireCanvas(prompt: string): void {
+  const ic = document.getElementById('inspire-canvas') as HTMLCanvasElement
+  const ictx = ic.getContext('2d')!
+  const icon = PIXEL_ICONS[pickIcon(prompt)]
+  ictx.fillStyle = isDark ? '#1e2027' : '#e8e4dc'
+  ictx.fillRect(0,0,80,50)
+  icon.grid.forEach((ci,i) => {
+    if (ci===0) return
+    ictx.fillStyle = icon.colors[ci]
+    ictx.fillRect((i%8)*10,Math.floor(i/8)*10,9,9)
   })
-  ;(paletteEl.firstChild as HTMLElement).classList.add('active')
-  colorNameEl.textContent = COLOR_NAMES[PALETTE[0]]
+}
+
+// ---------- tile count display ----------
+function totalTilesAvailable(): number {
+  return tilesRemaining + dripTilesAvailable
+}
+
+function updateTileDisplay(): void {
+  const total = totalTilesAvailable()
+  if (total > 0) {
+    tilesLeftEl.textContent = `${total} tiles left today`
+    return
+  }
+  // All tiles exhausted — show countdown to next drip
+  if (tilesExhaustedAt !== null) {
+    const nextDripAt = tilesExhaustedAt + TILE_DRIP_MS
+    const msLeft = Math.max(0, nextDripAt - Date.now())
+    const mins = Math.floor(msLeft / 60000)
+    const secs = Math.floor((msLeft % 60000) / 1000)
+    tilesLeftEl.textContent = `Next tile in ${mins}:${secs < 10 ? '0' : ''}${secs}`
+  } else {
+    tilesLeftEl.textContent = '0 tiles left'
+  }
 }
 
 // ---------- canvas ----------
@@ -137,8 +121,8 @@ function draw(): void {
   if (!mosaic) return
   ctx.clearRect(0,0,canvas.width,canvas.height)
   const style = getComputedStyle(document.body)
-  const emptyColor = style.getPropertyValue('--tile-empty').trim()
-  const hoverColor = style.getPropertyValue('--tile-hover').trim()
+  const emptyColor = style.getPropertyValue('--tile-empty').trim() || 'rgba(255,255,255,0.06)'
+  const hoverColor = style.getPropertyValue('--tile-hover').trim() || 'rgba(255,111,145,0.25)'
   mosaic.tiles.forEach((tile,i) => {
     const x = (i%GRID_WIDTH)*cellSize
     const y = Math.floor(i/GRID_WIDTH)*cellSize
@@ -190,6 +174,57 @@ canvas.addEventListener('click', e => {
   if (index>=0&&index<TILE_COUNT) void placeTile(index)
 })
 
+// ---------- palette ----------
+function buildPalette(): void {
+  paletteEl.innerHTML = ''
+  PALETTE.forEach(color => {
+    const swatch = document.createElement('button')
+    swatch.className = 'swatch'
+    swatch.style.background = color
+    swatch.title = COLOR_NAMES[color] ?? color
+    swatch.addEventListener('mouseenter', () => { colorNameEl.textContent = COLOR_NAMES[color] ?? color })
+    swatch.addEventListener('mouseleave', () => { colorNameEl.textContent = COLOR_NAMES[selectedColor] ?? '' })
+    swatch.addEventListener('click', () => {
+      selectedColor = color
+      document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'))
+      swatch.classList.add('active')
+      colorNameEl.textContent = COLOR_NAMES[color] ?? color
+    })
+    paletteEl.appendChild(swatch)
+  })
+
+  // Wildcard slot
+  const wc = document.createElement('button')
+  wc.className = 'swatch wildcard-swatch'
+  wc.id = 'wildcard-btn'
+  wc.innerHTML = wildcardColor ? '' : '✨'
+  wc.style.background = wildcardColor ?? 'transparent'
+  wc.style.border = wildcardColor ? '2px solid #f4f1de' : '2px dashed #888'
+  wc.title = 'Mix Custom Color'
+  wc.addEventListener('click', () => {
+    const input = window.prompt('Enter a hex color (e.g. #FF5733):')
+    if (!input) return
+    const hex = input.trim().toLowerCase()
+    if (!/^#[0-9a-f]{6}$/.test(hex)) {
+      showToast('⚠️ Invalid format — use #RRGGBB')
+      return
+    }
+    wildcardColor = hex
+    wildcardExpiresAt = Date.now() + WILDCARD_MS
+    selectedColor = hex
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'))
+    wc.classList.add('active')
+    wc.style.background = hex
+    wc.style.border = '2px solid #f4f1de'
+    wc.innerHTML = ''
+    colorNameEl.textContent = 'Custom Shade'
+  })
+  paletteEl.appendChild(wc)
+
+  ;(paletteEl.firstChild as HTMLElement).classList.add('active')
+  colorNameEl.textContent = COLOR_NAMES[PALETTE[0]]
+}
+
 // ---------- badge shelf ----------
 function renderBadgeShelf(earned: Badge[]): void {
   badgeShelf.innerHTML = ''
@@ -204,21 +239,18 @@ function renderBadgeShelf(earned: Badge[]): void {
   })
 }
 
-// ---------- toast ----------
 function showToast(msg: string): void {
   toast.innerHTML = msg
   toast.classList.add('show')
   setTimeout(()=>toast.classList.remove('show'),3500)
 }
 
-// ---------- XP ----------
 function updateXpBar(xp: number, level: number, xpForNext: number): void {
   levelEl.textContent = `Lv${level}`
   xpLabel.textContent = `${xp} / ${xpForNext} XP`
   xpBarFill.style.width = `${Math.min(100,Math.round((xp/xpForNext)*100))}%`
 }
 
-// ---------- activity ----------
 function renderActivity(items: ActivityItem[]): void {
   if (items.length===0) {
     activityList.innerHTML = '<li class="activity-empty">No activity yet — be the first to paint!</li>'
@@ -234,7 +266,6 @@ function renderActivity(items: ActivityItem[]): void {
   })
 }
 
-// ---------- leaderboard ----------
 function renderLeaderboard(entries: LeaderboardEntry[]): void {
   if (entries.length===0) {
     lbList.innerHTML = '<li class="lb-empty">No painters yet — start painting to appear here!</li>'
@@ -250,7 +281,6 @@ function renderLeaderboard(entries: LeaderboardEntry[]): void {
   })
 }
 
-// ---------- completion ----------
 function showCompletionScreen(participantCount: number): void {
   completionStats.innerHTML = `
     <div class="cs-stat">🎨 ${participantCount} redditors collaborated</div>
@@ -277,10 +307,14 @@ async function loadUserStatus(): Promise<void> {
   if (!res.ok) return
   const status = (await res.json()) as UserStatusRsp
   tilesRemaining = status.tilesRemainingToday
-  tilesLeftEl.textContent = `${tilesRemaining} tiles left today`
+  // If all daily tiles just ran out, record when
+  if (tilesRemaining === 0 && dripTilesAvailable === 0 && tilesExhaustedAt === null) {
+    tilesExhaustedAt = Date.now()
+  }
   streakEl.textContent = status.streakDays>0?`🔥 ${status.streakDays}-day streak`:''
   updateXpBar(status.xp, status.level, status.xpForNext)
   renderBadgeShelf(status.badges)
+  updateTileDisplay()
 }
 
 async function loadActivity(): Promise<void> {
@@ -298,7 +332,7 @@ async function loadAll(): Promise<void> {
 }
 
 async function placeTile(index: number): Promise<void> {
-  if (tilesRemaining<=0) return
+  if (totalTilesAvailable() <= 0) return
   const res = await fetch('/api/tile',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -308,8 +342,20 @@ async function placeTile(index: number): Promise<void> {
   const data = (await res.json()) as MosaicRsp&{newBadge:Badge|null;streakDays:number;xp:number;level:number;xpForNext:number}
   const prevPercent = mosaic?.completedPercent??0
   mosaic = data
-  tilesRemaining -= 1
-  tilesLeftEl.textContent = `${tilesRemaining} tiles left today`
+
+  // Consume from drip tiles first, then daily tiles
+  if (dripTilesAvailable > 0) {
+    dripTilesAvailable -= 1
+  } else {
+    tilesRemaining -= 1
+  }
+
+  // Record exhaustion moment
+  if (totalTilesAvailable() === 0 && tilesExhaustedAt === null) {
+    tilesExhaustedAt = Date.now()
+  }
+
+  updateTileDisplay()
   if (data.streakDays>0) streakEl.textContent = `🔥 ${data.streakDays}-day streak`
   updateXpBar(data.xp,data.level,data.xpForNext)
   animateTile(index,selectedColor)
@@ -339,8 +385,88 @@ async function init(): Promise<void> {
   buildPalette()
   resizeCanvas()
   window.addEventListener('resize',()=>{resizeCanvas();draw()})
+
+  // ---------- theme toggle ----------
+  const themeBtn = document.getElementById('theme-toggle') as HTMLButtonElement
+  if (themeBtn) {
+    const toggleTheme = (e: Event) => {
+      e.preventDefault()
+      e.stopPropagation()
+      isDark = !isDark
+      document.body.classList.toggle('light', !isDark)
+      themeBtn.textContent = isDark ? '🌙' : '☀️'
+      if (mosaic) drawInspireCanvas(mosaic.prompt)
+      draw()
+    }
+    themeBtn.addEventListener('click', toggleTheme)
+    themeBtn.addEventListener('touchend', toggleTheme)
+  }
+
+  // ---------- activity/leaderboard tabs ----------
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const handler = (e: Event) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const tab = (btn as HTMLElement).dataset.tab!
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+      btn.classList.add('active')
+      document.getElementById(`tab-${tab}`)?.classList.add('active')
+    }
+    btn.addEventListener('click', handler)
+    btn.addEventListener('touchend', handler)
+  })
+
   await loadAll()
-  setInterval(()=>void loadAll(),10000)
+
+  // 10-second mosaic refresh
+  setInterval(()=>void loadAll(), 10000)
+
+  // 1-second tick — drip timer + wildcard expiry
+  setInterval(() => {
+    const now = Date.now()
+
+    // Tile drip — add 1 tile every 15 min after exhaustion
+    if (tilesExhaustedAt !== null && dripTilesAvailable < MAX_STACK) {
+      const elapsed = now - tilesExhaustedAt
+      const dripsEarned = Math.floor(elapsed / TILE_DRIP_MS)
+      if (dripsEarned > 0) {
+        dripTilesAvailable = Math.min(MAX_STACK, dripsEarned)
+        // Reset exhaustedAt forward so next drip counts from now
+        tilesExhaustedAt = tilesExhaustedAt + dripsEarned * TILE_DRIP_MS
+        showToast('🎨 New tile available — go paint!')
+      }
+    }
+
+    updateTileDisplay()
+
+    // Wildcard expiry
+    const wc = document.getElementById('wildcard-btn')
+    if (wildcardColor && wildcardExpiresAt && wc) {
+      if (now >= wildcardExpiresAt) {
+        const expired = wildcardColor
+        wildcardColor = null
+        wildcardExpiresAt = null
+        wc.style.background = 'transparent'
+        wc.style.border = '2px dashed #888'
+        wc.innerHTML = '✨'
+        wc.classList.remove('active')
+        if (selectedColor === expired) {
+          selectedColor = PALETTE[0]
+          ;(paletteEl.firstChild as HTMLElement)?.classList.add('active')
+          colorNameEl.textContent = COLOR_NAMES[PALETTE[0]]
+        }
+        showToast('⚠️ <strong>Wildcard expired!</strong> Slot reset.')
+      } else {
+        const msLeft = wildcardExpiresAt - now
+        const mins = Math.floor(msLeft / 60000)
+        const secs = Math.floor((msLeft % 60000) / 1000)
+        if (selectedColor === wildcardColor) {
+          colorNameEl.textContent = `Custom (${mins}:${secs < 10 ? '0' : ''}${secs})`
+        }
+      }
+    }
+  }, 1000)
 }
 
 void init()
